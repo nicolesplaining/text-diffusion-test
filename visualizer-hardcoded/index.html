@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Diffusion Model Visualizer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .input-section {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        #prompt-input {
+            flex-grow: 1;
+            padding: 12px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px 0 0 4px;
+        }
+        #generate-btn {
+            padding: 12px 24px;
+            background-color: #4a69bd;
+            color: white;
+            border: none;
+            border-radius: 0 4px 4px 0;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+        #generate-btn:hover {
+            background-color: #3c58a8;
+        }
+        #generate-btn:disabled {
+            background-color: #94a6d6;
+            cursor: not-allowed;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+        }
+        label {
+            margin-right: 10px;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            margin-right: 20px;
+        }
+        .slider-value {
+            min-width: 40px;
+            text-align: right;
+            margin-left: 10px;
+        }
+        #visualization {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            min-height: 200px;
+        }
+        .token-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            font-family: monospace;
+        }
+        .token {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+            position: relative;
+            background-color: #f9f9f9;
+            transition: background-color 0.3s;
+        }
+        .token.mask {
+            background-color: #ffecb3;
+        }
+        .token.prompt {
+            background-color: #e3f2fd;
+        }
+        .token.generated {
+            background-color: #e8f5e9;
+        }
+        .token:hover .token-info {
+            display: block;
+        }
+        .token-info {
+            display: none;
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 10;
+        }
+        .controls-bar {
+            display: flex;
+            align-items: center;
+            margin-top: 20px;
+        }
+        #play-pause {
+            padding: 8px 16px;
+            background-color: #4a69bd;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        #step-slider {
+            flex-grow: 1;
+            margin: 0 10px;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            margin-top: 10px;
+            gap: 20px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            margin-right: 8px;
+        }
+        .output-section {
+            margin-top: 20px;
+        }
+        .output-text {
+            white-space: pre-wrap;
+            background-color: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            min-height: 100px;
+        }
+        .step-counter {
+            margin-left: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Text Diffusion Model Visualizer</h1>
+    
+    <div class="input-section">
+        <input type="text" id="prompt-input" placeholder="Enter your prompt here..." value="Lily can run 12 kilometers per hour for 4 hours. After that, she runs 6 kilometers per hour. How many kilometers can she run in 8 hours?">
+        <button id="generate-btn">Generate</button>
+    </div>
+    
+    <div class="controls">
+        <div class="control-group">
+            <div class="slider-container">
+                <label for="gen-length">Generation Length:</label>
+                <input type="range" id="gen-length" min="32" max="256" value="128" step="32">
+                <span class="slider-value" id="gen-length-value">128</span>
+            </div>
+            
+            <div class="slider-container">
+                <label for="steps">Steps:</label>
+                <input type="range" id="steps" min="32" max="256" value="128" step="32">
+                <span class="slider-value" id="steps-value">128</span>
+            </div>
+            
+            <div class="slider-container">
+                <label for="block-length">Block Length:</label>
+                <input type="range" id="block-length" min="16" max="128" value="32" step="16">
+                <span class="slider-value" id="block-length-value">32</span>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <div class="slider-container">
+                <label for="temperature">Temperature:</label>
+                <input type="range" id="temperature" min="0" max="1" value="0" step="0.1">
+                <span class="slider-value" id="temperature-value">0</span>
+            </div>
+            
+            <div class="slider-container">
+                <label for="cfg-scale">CFG Scale:</label>
+                <input type="range" id="cfg-scale" min="0" max="3" value="0" step="0.5">
+                <span class="slider-value" id="cfg-scale-value">0</span>
+            </div>
+        </div>
+    </div>
+    
+    <div id="visualization">
+        <div class="token-grid" id="token-grid"></div>
+        <div class="controls-bar">
+            <button id="play-pause">Play</button>
+            <input type="range" id="step-slider" min="0" max="100" value="0" step="1" disabled>
+            <span class="step-counter">Step: <span id="current-step">0</span>/<span id="total-steps">0</span></span>
+        </div>
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #e3f2fd;"></div>
+                <span>Prompt Tokens</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #ffecb3;"></div>
+                <span>Mask Tokens</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #e8f5e9;"></div>
+                <span>Generated Tokens</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="output-section">
+        <h3>Final Output:</h3>
+        <div class="output-text" id="output-text"></div>
+    </div>
+    
+    <!-- <div class="output-section">
+        <h3>About the Visualization:</h3>
+        <div class="output-text">
+            <p><strong>What you're seeing:</strong> This demo visualizes how a text diffusion model like LLaDA works.</p>
+            <p><strong>Key features:</strong></p>
+            <ul style="margin-left: 20px; line-height: 1.5;">
+                <li><strong>Masked tokens:</strong> Initially, all output positions are filled with [MASK] tokens (yellow)</li>
+                <li><strong>Progressive generation:</strong> The diffusion process gradually replaces masks with actual tokens</li>
+                <li><strong>Remasking strategy:</strong> Some tokens can revert back to masks if the model has low confidence in them (per your "remasking='low_confidence'" parameter)</li>
+                <li><strong>Block-based generation:</strong> The model processes text in blocks of tokens (per your "block_length" parameter)</li>
+            </ul>
+            <p>This is a simulation - in your real model, the confidence scores from the softmax would determine which tokens get chosen and remasked.</p>
+        </div>
+    </div> -->
+
+    <script>
+        // DOM elements
+        const promptInput = document.getElementById('prompt-input');
+        const generateBtn = document.getElementById('generate-btn');
+        const genLengthSlider = document.getElementById('gen-length');
+        const genLengthValue = document.getElementById('gen-length-value');
+        const stepsSlider = document.getElementById('steps');
+        const stepsValue = document.getElementById('steps-value');
+        const blockLengthSlider = document.getElementById('block-length');
+        const blockLengthValue = document.getElementById('block-length-value');
+        const temperatureSlider = document.getElementById('temperature');
+        const temperatureValue = document.getElementById('temperature-value');
+        const cfgScaleSlider = document.getElementById('cfg-scale');
+        const cfgScaleValue = document.getElementById('cfg-scale-value');
+        const tokenGrid = document.getElementById('token-grid');
+        const playPauseBtn = document.getElementById('play-pause');
+        const stepSlider = document.getElementById('step-slider');
+        const currentStepDisplay = document.getElementById('current-step');
+        const totalStepsDisplay = document.getElementById('total-steps');
+        const outputText = document.getElementById('output-text');
+
+        // Simulation state
+        let isPlaying = false;
+        let animationFrameId = null;
+        let currentStep = 0;
+        let simulationSteps = [];
+        let maskId = 126336; // [MASK] token ID
+        let eosId = 126081; // <EOS> token ID
+
+        // Mock tokenizer for UI demonstration
+        const mockTokens = [
+            "The", "answer", "is", "48", "kilometers", ".", 
+            "Lily", "runs", "at", "12", "km/h", "for", "4", "hours", 
+            "which", "equals", "to", "km", "Then", "she", "runs", "at", 
+            "6", "km/h", "for", "another", "4", "hours", "which", "equals", 
+            "24", "km", "Total", "distance", "=", "48", "+"
+        ];
+
+        // Update UI values
+        genLengthSlider.addEventListener('input', () => {
+            genLengthValue.textContent = genLengthSlider.value;
+        });
+        
+        stepsSlider.addEventListener('input', () => {
+            stepsValue.textContent = stepsSlider.value;
+        });
+        
+        blockLengthSlider.addEventListener('input', () => {
+            blockLengthValue.textContent = blockLengthSlider.value;
+        });
+        
+        temperatureSlider.addEventListener('input', () => {
+            temperatureValue.textContent = temperatureSlider.value;
+        });
+        
+        cfgScaleSlider.addEventListener('input', () => {
+            cfgScaleValue.textContent = cfgScaleSlider.value;
+        });
+
+        // Mock diffusion process - simulates the diffusion model with remasking
+        function simulateDiffusion() {
+            const prompt = promptInput.value;
+            const genLength = parseInt(genLengthSlider.value);
+            const steps = parseInt(stepsSlider.value);
+            const blockLength = parseInt(blockLengthSlider.value);
+            
+            // In a real implementation, we'd call the generate function here
+            
+            // Create mock tokens for demonstration
+            const promptTokens = prompt.split(/\s+/).slice(0, 20); // Simulated tokenization
+            const totalLength = promptTokens.length + genLength;
+            
+            // Initial state: prompt tokens + mask tokens
+            let initialState = new Array(totalLength).fill(maskId);
+            promptTokens.forEach((_, i) => {
+                initialState[i] = i; // Use index as token ID for prompt tokens
+            });
+            
+            // Record initial state
+            simulationSteps = [initialState.slice()];
+            
+            // Simulate the diffusion process
+            const numBlocks = Math.ceil(genLength / blockLength);
+            const stepsPerBlock = Math.ceil(steps / numBlocks);
+            
+            // For each block
+            for (let block = 0; block < numBlocks; block++) {
+                const blockStart = promptTokens.length + block * blockLength;
+                const blockEnd = Math.min(blockStart + blockLength, totalLength);
+                
+                // For each step in this block
+                for (let step = 0; step < stepsPerBlock; step++) {
+                    const prevState = simulationSteps[simulationSteps.length - 1].slice();
+                    
+                    // Generate some tokens in each step
+                    const tokensPerStep = Math.max(1, Math.floor((blockEnd - blockStart) / stepsPerBlock));
+                    
+                    // Randomly select tokens to update
+                    const maskPositions = [];
+                    for (let i = blockStart; i < blockEnd; i++) {
+                        if (prevState[i] === maskId) {
+                            maskPositions.push(i);
+                        }
+                    }
+                    
+                    // Shuffle and take first N positions
+                    maskPositions.sort(() => 0.5 - Math.random());
+                    const positionsToUpdate = maskPositions.slice(0, tokensPerStep);
+                    
+                    // Update the tokens - simulating the remasking strategy
+                    positionsToUpdate.forEach(pos => {
+                        // In a real implementation, we'd use the model's output here
+                        // For demo, just use a mock token from our list
+                        const mockTokenIdx = Math.floor(Math.random() * mockTokens.length);
+                        prevState[pos] = promptTokens.length + mockTokenIdx; // Using offset to distinguish from prompt tokens
+                    });
+                    
+                    // Simulate remasking: tokens can revert back to [MASK] based on confidence
+                    // This simulates the 'low_confidence' remasking strategy from your code
+                    if (step < stepsPerBlock - 1 && block < numBlocks - 1) {
+                        // Find tokens that might be remasked (excluding prompt tokens)
+                        const remaskCandidates = [];
+                        for (let i = promptTokens.length; i < totalLength; i++) {
+                            // Only consider tokens that have been generated (not still masked)
+                            if (prevState[i] !== maskId && i >= blockStart) {
+                                remaskCandidates.push(i);
+                            }
+                        }
+                        
+                        // Randomly select some tokens to remask based on "confidence"
+                        if (remaskCandidates.length > 0) {
+                            const numToRemask = Math.floor(remaskCandidates.length * 0.2); // 20% chance to remask
+                            remaskCandidates.sort(() => 0.5 - Math.random());
+                            const tokensToRemask = remaskCandidates.slice(0, numToRemask);
+                            
+                            // Remask selected tokens
+                            tokensToRemask.forEach(pos => {
+                                prevState[pos] = maskId;
+                            });
+                        }
+                    }
+                    
+                    // Add this state to our steps
+                    simulationSteps.push(prevState.slice());
+                }
+            }
+            
+            // Update UI
+            totalStepsDisplay.textContent = simulationSteps.length - 1;
+            stepSlider.max = simulationSteps.length - 1;
+            stepSlider.disabled = false;
+            
+            renderStep(0);
+            playPauseBtn.textContent = "Play";
+            isPlaying = false;
+            
+            // Generate mock output
+            outputText.textContent = "To solve this problem, I need to calculate how far Lily runs in 8 hours.\n\n" +
+                "First 4 hours: Lily runs at 12 km/h\n" +
+                "12 km/h × 4 hours = 48 km\n\n" +
+                "Next 4 hours: Lily runs at 6 km/h\n" +
+                "6 km/h × 4 hours = 24 km\n\n" +
+                "Total distance: 48 km + 24 km = 72 km\n\n" +
+                "Therefore, Lily can run 72 kilometers in 8 hours.";
+        }
+
+        // Render a specific step of the simulation
+        function renderStep(step) {
+            currentStep = step;
+            currentStepDisplay.textContent = step;
+            stepSlider.value = step;
+            
+            if (!simulationSteps[step]) return;
+            
+            tokenGrid.innerHTML = '';
+            const state = simulationSteps[step];
+            
+            const prompt = promptInput.value;
+            const promptTokens = prompt.split(/\s+/).slice(0, 20); // Simulated tokenization
+            
+            state.forEach((tokenId, index) => {
+                const tokenElement = document.createElement('div');
+                tokenElement.classList.add('token');
+                
+                let tokenClass = '';
+                let tokenText = '';
+                let tooltipText = '';
+                
+                if (index < promptTokens.length) {
+                    // Prompt tokens
+                    tokenClass = 'prompt';
+                    tokenText = promptTokens[index].slice(0, 2); // First 2 chars
+                    tooltipText = promptTokens[index];
+                } else if (tokenId === maskId) {
+                    // Mask tokens
+                    tokenClass = 'mask';
+                    tokenText = '?';
+                    tooltipText = '[MASK]';
+                } else {
+                    // Generated tokens
+                    tokenClass = 'generated';
+                    const mockIndex = Math.max(0, tokenId - promptTokens.length);
+                    const mockToken = mockTokens[mockIndex % mockTokens.length];
+                    tokenText = mockToken ? mockToken.slice(0, 2) : '?';
+                    tooltipText = mockToken || '?';
+                }
+                
+                tokenElement.classList.add(tokenClass);
+                tokenElement.textContent = tokenText;
+                
+                const tooltipElement = document.createElement('span');
+                tooltipElement.classList.add('token-info');
+                tooltipElement.textContent = tooltipText;
+                tokenElement.appendChild(tooltipElement);
+                
+                tokenGrid.appendChild(tokenElement);
+            });
+        }
+
+        // Play/Pause simulation
+        playPauseBtn.addEventListener('click', () => {
+            isPlaying = !isPlaying;
+            playPauseBtn.textContent = isPlaying ? "Pause" : "Play";
+            
+            if (isPlaying) {
+                playAnimation();
+            } else {
+                cancelAnimationFrame(animationFrameId);
+            }
+        });
+
+        // Step slider
+        stepSlider.addEventListener('input', () => {
+            isPlaying = false;
+            playPauseBtn.textContent = "Play";
+            cancelAnimationFrame(animationFrameId);
+            renderStep(parseInt(stepSlider.value));
+        });
+
+        // Animation loop
+        function playAnimation() {
+            const nextStep = currentStep + 1;
+            if (nextStep >= simulationSteps.length) {
+                isPlaying = false;
+                playPauseBtn.textContent = "Play";
+                return;
+            }
+            
+            renderStep(nextStep);
+            
+            if (isPlaying) {
+                animationFrameId = requestAnimationFrame(() => {
+                    setTimeout(playAnimation, 200); // Control animation speed
+                });
+            }
+        }
+
+        // Start generation
+        generateBtn.addEventListener('click', () => {
+            generateBtn.disabled = true;
+            generateBtn.textContent = "Generating...";
+            
+            // Simulate backend processing time
+            setTimeout(() => {
+                simulateDiffusion();
+                generateBtn.disabled = false;
+                generateBtn.textContent = "Generate";
+            }, 1000);
+        });
+
+        // Initialize with example
+        simulateDiffusion();
+    </script>
+</body>
+</html>
