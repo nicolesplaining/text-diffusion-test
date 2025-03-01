@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Text Diffusion Model Visualizer</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+      color: #333;
+    }
+    h1 { text-align: center; margin-bottom: 20px; }
+    /* Dropdown styling */
+    #example-selector {
+      width: 100%;
+      max-width: 800px;
+      margin: 0 auto 20px;
+      display: block;
+      padding: 8px;
+      font-size: 16px;
+    }
+    .token-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      font-family: monospace;
+    }
+    /* Token box styling: using padding so boxes expand */
+    .token {
+      display: inline-block;
+      padding: 8px 12px;
+      min-width: 40px;
+      min-height: 40px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      position: relative;
+      background-color: #f9f9f9;
+      transition: all 0.3s;
+      box-sizing: border-box;
+    }
+    .token.mask { background-color: #ffecb3; }
+    .token.generated { background-color: #e8f5e9; }
+    .token.empty { background-color: #e8f5e9; color: #aaa; }
+    .token.lowconfidence { background-color: #ffecb3; }
+    .token:hover .token-info { display: block; }
+    .token-info {
+      display: none;
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #333;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      z-index: 10;
+    }
+    .controls-bar {
+      display: flex;
+      align-items: center;
+      margin-top: 20px;
+    }
+    #play-pause {
+      padding: 8px 16px;
+      background-color: #4a69bd;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    #step-slider { flex-grow: 1; margin: 0 10px; }
+    .step-counter { margin-left: 10px; font-weight: bold; }
+    .output-section { margin-top: 20px; }
+    .output-text {
+      white-space: pre-wrap;
+      background-color: white;
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      min-height: 100px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Text Diffusion Model Visualizer</h1>
+  
+  <!-- Dropdown to select example -->
+  <select id="example-selector">
+    <option value="lily">
+      Lily can run 12 kilometers per hour for 4 hours. After that, she runs 6 kilometers per hour. How many kilometers can she run in 8 hours?
+    </option>
+    <option value="robot">
+      Write a short story about a robot who discovers emotions
+    </option>
+    <option value="photosynthesis">
+      Explain how photosynthesis works in simple terms
+    </option>
+  </select>
+  
+  <div id="visualization">
+    <div class="token-grid" id="token-grid"></div>
+    <div class="controls-bar">
+      <button id="play-pause">Play</button>
+      <input type="range" id="step-slider" min="0" max="0" value="0" step="1" disabled>
+      <span class="step-counter">Step: <span id="current-step">0</span>/<span id="total-steps">0</span></span>
+    </div>
+  </div>
+  
+  <div class="output-section">
+    <h3>Final Output:</h3>
+    <div class="output-text" id="output-text"></div>
+  </div>
+  
+  <script>
+    // DOM elements
+    const exampleSelector = document.getElementById("example-selector");
+    const tokenGrid = document.getElementById("token-grid");
+    const playPauseBtn = document.getElementById("play-pause");
+    const stepSlider = document.getElementById("step-slider");
+    const currentStepDisplay = document.getElementById("current-step");
+    const totalStepsDisplay = document.getElementById("total-steps");
+    const outputText = document.getElementById("output-text");
+    
+    // Simulation state
+    let simulationSteps = [];
+    let currentStep = 0;
+    let isPlaying = false;
+    let animationFrameId = null;
+    
+    // Constants for token markers and expected token count
+    const MASK_TOKEN = "<|mdm_mask|>";
+    const NUM_TOKENS = 128;  // Each state should have 128 tokens
+    
+    // Map each example to its corresponding diffusion output file and final output text.
+    const examples = {
+      lily: {
+        file: "diffusion_output_lily.txt",
+        finalText: "Lily can run 12 kilometers per hour for 4 hours, so she runs 72 kilometers in 8 hours."
+      },
+      robot: {
+        file: "diffusion_output_robot.txt",
+        finalText: "Once upon a time, a robot named XR-7 discovered emotions and changed the world with its newfound empathy." // replace with full text
+      },
+      photosynthesis: {
+        file: "diffusion_output_photosynthesis.txt",
+        finalText: "Photosynthesis is the process by which plants convert sunlight into energy, using chlorophyll to transform CO₂ and water into sugars and oxygen." // replace with full text
+      }
+    };
+    
+    // Load the diffusion output file for the selected example.
+    function loadDiffusionOutput(selectedExample) {
+      const fileName = examples[selectedExample].file;
+      return fetch(fileName)
+        .then(response => response.text())
+        .then(text => parseDiffusionOutput(text))
+        .catch(err => {
+          console.error("Error loading diffusion output file:", err);
+          return [];
+        });
+    }
+    
+    // Parse the diffusion output file.
+    // This regex matches headers like "Block X, Step Y/Z:" and captures all text until the next header.
+    // Before splitting, we insert spaces around each MASK_TOKEN so that consecutive masks are separated.
+    // If the token count is less than 128, pad with empty tokens.
+    function parseDiffusionOutput(fileText) {
+      const steps = [];
+      const regex = /Block\s+\d+,\s*Step\s+\d+\/\d+:\s*([\s\S]*?)(?=Block\s+\d+,\s*Step|\s*$)/g;
+      let match;
+      while ((match = regex.exec(fileText)) !== null) {
+        let stepText = match[1].trim();
+        // Insert spaces around each MASK_TOKEN occurrence.
+        stepText = stepText.replace(/(<\|mdm_mask\|>)/g, ' $1 ');
+        // Split by whitespace into tokens.
+        let tokens = stepText.split(/\s+/).filter(token => token !== "");
+        // If tokens are fewer than 128, pad with empty strings.
+        while (tokens.length < NUM_TOKENS) {
+          tokens.push("");
+        }
+        // If tokens are more than 128, truncate.
+        if (tokens.length > NUM_TOKENS) {
+          tokens = tokens.slice(0, NUM_TOKENS);
+        }
+        steps.push(tokens);
+      }
+      console.log("Parsed simulation steps:", steps.length);
+      return steps;
+    }
+    
+    // Render a given simulation step.
+    function renderStep(stepIndex) {
+      currentStep = stepIndex;
+      currentStepDisplay.textContent = stepIndex;
+      stepSlider.value = stepIndex;
+      tokenGrid.innerHTML = "";
+      if (!simulationSteps[stepIndex]) return;
+      
+      const tokens = simulationSteps[stepIndex];
+      // Determine which tokens will change in the next step for highlighting.
+      const willChange = new Set();
+      if (stepIndex < simulationSteps.length - 1) {
+        const nextTokens = simulationSteps[stepIndex + 1];
+        for (let i = 0; i < tokens.length; i++) {
+          if (tokens[i] !== nextTokens[i]) {
+            willChange.add(i);
+          }
+        }
+      }
+      
+      tokens.forEach((token, index) => {
+        const tokenElement = document.createElement("div");
+        tokenElement.classList.add("token");
+        const tokenWillChange = willChange.has(index);
+        if (token === MASK_TOKEN) {
+          tokenElement.classList.add("mask");
+          tokenElement.textContent = "?";
+          const tooltip = document.createElement("span");
+          tooltip.classList.add("token-info");
+          tooltip.textContent = "Masked";
+          tokenElement.appendChild(tooltip);
+        } else if (token === "") {
+          tokenElement.classList.add("empty");
+          tokenElement.textContent = "";
+          const tooltip = document.createElement("span");
+          tooltip.classList.add("token-info");
+          tooltip.textContent = "[EMPTY]";
+          tokenElement.appendChild(tooltip);
+        } else {
+          tokenElement.classList.add("generated");
+          if (tokenWillChange) {
+            tokenElement.classList.add("lowconfidence");
+          }
+          tokenElement.textContent = token;
+          const tooltip = document.createElement("span");
+          tooltip.classList.add("token-info");
+          tooltip.textContent = token;
+          tokenElement.appendChild(tooltip);
+        }
+        tokenGrid.appendChild(tokenElement);
+      });
+    }
+    
+    // Animation loop.
+    function playAnimation() {
+      const nextStep = currentStep + 1;
+      if (nextStep >= simulationSteps.length) {
+        isPlaying = false;
+        playPauseBtn.textContent = "Play";
+        return;
+      }
+      renderStep(nextStep);
+      if (isPlaying) {
+        animationFrameId = requestAnimationFrame(() => {
+          setTimeout(playAnimation, 100);
+        });
+      }
+    }
+    
+    playPauseBtn.addEventListener("click", () => {
+      isPlaying = !isPlaying;
+      playPauseBtn.textContent = isPlaying ? "Pause" : "Play";
+      if (isPlaying) playAnimation();
+      else cancelAnimationFrame(animationFrameId);
+    });
+    
+    stepSlider.addEventListener("input", () => {
+      isPlaying = false;
+      playPauseBtn.textContent = "Play";
+      cancelAnimationFrame(animationFrameId);
+      renderStep(parseInt(stepSlider.value));
+    });
+    
+    // Main simulation function.
+    function simulateDiffusion() {
+      // Disable controls while loading.
+      stepSlider.disabled = true;
+      playPauseBtn.disabled = true;
+      
+      const selectedExample = exampleSelector.value;
+      loadDiffusionOutput(selectedExample).then(steps => {
+        simulationSteps = steps;
+        if (simulationSteps.length === 0) {
+          console.error("No simulation steps parsed from file.");
+          return;
+        }
+        totalStepsDisplay.textContent = simulationSteps.length - 1;
+        stepSlider.max = simulationSteps.length - 1;
+        stepSlider.disabled = false;
+        playPauseBtn.disabled = false;
+        // Set the final output text from our predefined final texts.
+        outputText.textContent = examples[selectedExample].finalText;
+        renderStep(0);
+        playPauseBtn.textContent = "Play";
+      });
+    }
+    
+    // Reload simulation when the dropdown changes.
+    exampleSelector.addEventListener("change", simulateDiffusion);
+    
+    // Also, reload simulation when the "Generate" button is clicked.
+    // (If you want a separate "Generate" button, add it in HTML and wire it here.)
+    
+    // Start simulation on page load.
+    simulateDiffusion();
+  </script>
+</body>
+</html>

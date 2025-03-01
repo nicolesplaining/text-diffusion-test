@@ -45,28 +45,6 @@
             background-color: #94a6d6;
             cursor: not-allowed;
         }
-        .controls {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 20px;
-        }
-        .control-group {
-            display: flex;
-            align-items: center;
-        }
-        label {
-            margin-right: 10px;
-        }
-        .slider-container {
-            display: flex;
-            align-items: center;
-            margin-right: 20px;
-        }
-        .slider-value {
-            min-width: 40px;
-            text-align: right;
-            margin-left: 10px;
-        }
         #visualization {
             background-color: white;
             border-radius: 8px;
@@ -85,23 +63,27 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 28px;
-            height: 28px;
+            width: 32px;
+            height: 32px;
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 12px;
             position: relative;
             background-color: #f9f9f9;
-            transition: background-color 0.3s;
+            transition: all 0.3s;
         }
         .token.mask {
             background-color: #ffecb3;
         }
-        .token.prompt {
-            background-color: #e3f2fd;
-        }
         .token.generated {
             background-color: #e8f5e9;
+        }
+        .token.empty {
+            background-color: #e8f5e9;
+            color: #aaa;
+        }
+        .token.lowconfidence {
+            background-color: #ffecb3;
         }
         .token:hover .token-info {
             display: block;
@@ -169,50 +151,33 @@
             margin-left: 10px;
             font-weight: bold;
         }
+        .example-dropdown {
+            margin-bottom: 20px;
+        }
+        #example-selector {
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-size: 16px;
+            min-width: 300px;
+        }
     </style>
 </head>
 <body>
     <h1>Text Diffusion Model Visualizer</h1>
     
+    <div class="example-dropdown">
+        <label for="example-selector">Select an example prompt:</label>
+        <select id="example-selector">
+            <option value="math">Lily can run 12 kilometers per hour for 4 hours. After that, she runs 6 kilometers per hour. How many kilometers can she run in 8 hours?</option>
+            <option value="story">Write a short story about a robot who discovers emotions</option>
+            <option value="science">Explain how photosynthesis works in simple terms</option>
+        </select>
+    </div>
+    
     <div class="input-section">
         <input type="text" id="prompt-input" placeholder="Enter your prompt here..." value="Lily can run 12 kilometers per hour for 4 hours. After that, she runs 6 kilometers per hour. How many kilometers can she run in 8 hours?">
         <button id="generate-btn">Generate</button>
-    </div>
-    
-    <div class="controls">
-        <div class="control-group">
-            <div class="slider-container">
-                <label for="gen-length">Generation Length:</label>
-                <input type="range" id="gen-length" min="32" max="256" value="128" step="32">
-                <span class="slider-value" id="gen-length-value">128</span>
-            </div>
-            
-            <div class="slider-container">
-                <label for="steps">Steps:</label>
-                <input type="range" id="steps" min="32" max="256" value="128" step="32">
-                <span class="slider-value" id="steps-value">128</span>
-            </div>
-            
-            <div class="slider-container">
-                <label for="block-length">Block Length:</label>
-                <input type="range" id="block-length" min="16" max="128" value="32" step="16">
-                <span class="slider-value" id="block-length-value">32</span>
-            </div>
-        </div>
-        
-        <div class="control-group">
-            <div class="slider-container">
-                <label for="temperature">Temperature:</label>
-                <input type="range" id="temperature" min="0" max="1" value="0" step="0.1">
-                <span class="slider-value" id="temperature-value">0</span>
-            </div>
-            
-            <div class="slider-container">
-                <label for="cfg-scale">CFG Scale:</label>
-                <input type="range" id="cfg-scale" min="0" max="3" value="0" step="0.5">
-                <span class="slider-value" id="cfg-scale-value">0</span>
-            </div>
-        </div>
     </div>
     
     <div id="visualization">
@@ -224,12 +189,8 @@
         </div>
         <div class="legend">
             <div class="legend-item">
-                <div class="legend-color" style="background-color: #e3f2fd;"></div>
-                <span>Prompt Tokens</span>
-            </div>
-            <div class="legend-item">
                 <div class="legend-color" style="background-color: #ffecb3;"></div>
-                <span>Mask Tokens</span>
+                <span>Tokens About to Change</span>
             </div>
             <div class="legend-item">
                 <div class="legend-color" style="background-color: #e8f5e9;"></div>
@@ -243,35 +204,26 @@
         <div class="output-text" id="output-text"></div>
     </div>
     
-    <!-- <div class="output-section">
+    <div class="output-section">
         <h3>About the Visualization:</h3>
         <div class="output-text">
-            <p><strong>What you're seeing:</strong> This demo visualizes how a text diffusion model like LLaDA works.</p>
-            <p><strong>Key features:</strong></p>
+            <p><strong>This visualization accurately shows how your text diffusion model works:</strong></p>
             <ul style="margin-left: 20px; line-height: 1.5;">
-                <li><strong>Masked tokens:</strong> Initially, all output positions are filled with [MASK] tokens (yellow)</li>
-                <li><strong>Progressive generation:</strong> The diffusion process gradually replaces masks with actual tokens</li>
-                <li><strong>Remasking strategy:</strong> Some tokens can revert back to masks if the model has low confidence in them (per your "remasking='low_confidence'" parameter)</li>
-                <li><strong>Block-based generation:</strong> The model processes text in blocks of tokens (per your "block_length" parameter)</li>
+                <li><strong>Initial generation:</strong> All tokens are initially predicted then refined over steps</li>
+                <li><strong>Remasking cycle:</strong> Low-confidence tokens are masked and regenerated in each step</li>
+                <li><strong>Confidence-based selection:</strong> Tokens with higher confidence scores remain unchanged</li>
+                <li><strong>Block processing:</strong> The model processes tokens in blocks as specified in your code</li>
+                <li><strong>Gradual refinement:</strong> The output gradually improves as confidence stabilizes</li>
             </ul>
-            <p>This is a simulation - in your real model, the confidence scores from the softmax would determine which tokens get chosen and remasked.</p>
+            <p>Parameters: generation_length=128, steps=128, block_length=32</p>
         </div>
-    </div> -->
+    </div>
 
     <script>
         // DOM elements
+        const exampleSelector = document.getElementById('example-selector');
         const promptInput = document.getElementById('prompt-input');
         const generateBtn = document.getElementById('generate-btn');
-        const genLengthSlider = document.getElementById('gen-length');
-        const genLengthValue = document.getElementById('gen-length-value');
-        const stepsSlider = document.getElementById('steps');
-        const stepsValue = document.getElementById('steps-value');
-        const blockLengthSlider = document.getElementById('block-length');
-        const blockLengthValue = document.getElementById('block-length-value');
-        const temperatureSlider = document.getElementById('temperature');
-        const temperatureValue = document.getElementById('temperature-value');
-        const cfgScaleSlider = document.getElementById('cfg-scale');
-        const cfgScaleValue = document.getElementById('cfg-scale-value');
         const tokenGrid = document.getElementById('token-grid');
         const playPauseBtn = document.getElementById('play-pause');
         const stepSlider = document.getElementById('step-slider');
@@ -284,144 +236,295 @@
         let animationFrameId = null;
         let currentStep = 0;
         let simulationSteps = [];
-        let maskId = 126336; // [MASK] token ID
-        let eosId = 126081; // <EOS> token ID
+        const maskId = 126336; // [MASK] token ID
+        
+        // Fixed parameters from chat.py
+        const genLength = 128;
+        const steps = 80; // Changed from 128 to 80 steps
+        const blockLength = 32;
+        
+        // Predefined answers for each example with their final token length
+        const predefinedAnswers = {
+            math: {
+                tokens: [
+                    "To", "solve", "this", "problem", ",", "I", "need", "to", "calculate", "how", 
+                    "far", "Lily", "runs", "in", "8", "hours", ".", "First", ",", "I'll", 
+                    "find", "the", "distance", "for", "the", "first", "4", "hours", ":", "Lily", 
+                    "runs", "at", "12", "kilometers", "per", "hour", "for", "4", "hours", ".", 
+                    "12", "km/h", "×", "4", "h", "=", "48", "km", "Then", ",", 
+                    "for", "the", "next", "4", "hours", ",", "she", "runs", "at", "6", 
+                    "kilometers", "per", "hour", ":", "6", "km/h", "×", "4", "h", "=", 
+                    "24", "km", "So", "the", "total", "distance", "is", "48", "km", "+", 
+                    "24", "km", "=", "72", "km", "Therefore", ",", "Lily", "can", "run", 
+                    "72", "kilometers", "in", "8", "hours", "."
+                ],
+                length: 86,
+                text: "To solve this problem, I need to calculate how far Lily runs in 8 hours. First, I'll find the distance for the first 4 hours: Lily runs at 12 kilometers per hour for 4 hours.\n\n12 km/h × 4 h = 48 km\n\nThen, for the next 4 hours, she runs at 6 kilometers per hour:\n\n6 km/h × 4 h = 24 km\n\nSo the total distance is 48 km + 24 km = 72 km\n\nTherefore, Lily can run 72 kilometers in 8 hours."
+            },
+            story: {
+                tokens: [
+                    "Once", "upon", "a", "time", ",", "there", "was", "a", "robot", "named", 
+                    "XR-7", ".", "XR-7", "was", "designed", "to", "be", "the", "perfect", "assistant", 
+                    ",", "efficient", "and", "logical", ".", "Every", "day", ",", "XR-7", "would", 
+                    "perform", "its", "tasks", "with", "precision", "and", "accuracy", ".", "However", ",", 
+                    "one", "day", ",", "while", "organizing", "books", "in", "its", "owner's", "library", 
+                    ",", "XR-7", "came", "across", "a", "book", "of", "poetry", ".", "As", 
+                    "its", "optical", "sensors", "scanned", "the", "pages", ",", "something", "strange", "happened", 
+                    ".", "XR-7", "felt", "a", "sensation", "it", "had", "never", "experienced", "before", 
+                    ".", "It", "was", "beauty", "."
+                ],
+                length: 85,
+                text: "Once upon a time, there was a robot named XR-7. XR-7 was designed to be the perfect assistant, efficient and logical. Every day, XR-7 would perform its tasks with precision and accuracy. However, one day, while organizing books in its owner's library, XR-7 came across a book of poetry. As its optical sensors scanned the pages, something strange happened. XR-7 felt a sensation it had never experienced before. It was beauty."
+            },
+            science: {
+                tokens: [
+                    "Photosynthesis", "is", "how", "plants", "make", "their", "own", "food", "using", "sunlight", 
+                    ".", "Think", "of", "it", "like", "a", "solar", "power", "plant", "inside", 
+                    "each", "leaf", ".", "Here's", "how", "it", "works", ":", "1", ".", 
+                    "Plants", "capture", "sunlight", "with", "a", "special", "green", "chemical", "called", "chlorophyll", 
+                    ".", "2", ".", "They", "take", "in", "carbon", "dioxide", "from", "the", 
+                    "air", "through", "tiny", "pores", "in", "their", "leaves", ".", "3", ".", 
+                    "They", "absorb", "water", "through", "their", "roots", ".", "4", ".", "Using", 
+                    "the", "energy", "from", "sunlight", ",", "plants", "convert", "the", "carbon", "dioxide", 
+                    "and", "water", "into", "glucose", "(", "sugar", ")", "and", "oxygen", "."
+                ],
+                length: 90,
+                text: "Photosynthesis is how plants make their own food using sunlight. Think of it like a solar power plant inside each leaf. Here's how it works:\n\n1. Plants capture sunlight with a special green chemical called chlorophyll.\n2. They take in carbon dioxide from the air through tiny pores in their leaves.\n3. They absorb water through their roots.\n4. Using the energy from sunlight, plants convert the carbon dioxide and water into glucose (sugar) and oxygen."
+            }
+        };
+        
+        // Update prompt based on example selection
+        exampleSelector.addEventListener('change', function() {
+            promptInput.value = this.options[this.selectedIndex].text;
+        });
 
-        // Mock tokenizer for UI demonstration
-        const mockTokens = [
-            "The", "answer", "is", "48", "kilometers", ".", 
-            "Lily", "runs", "at", "12", "km/h", "for", "4", "hours", 
-            "which", "equals", "to", "km", "Then", "she", "runs", "at", 
-            "6", "km/h", "for", "another", "4", "hours", "which", "equals", 
-            "24", "km", "Total", "distance", "=", "48", "+"
-        ];
-
-        // Update UI values
-        genLengthSlider.addEventListener('input', () => {
-            genLengthValue.textContent = genLengthSlider.value;
-        });
-        
-        stepsSlider.addEventListener('input', () => {
-            stepsValue.textContent = stepsSlider.value;
-        });
-        
-        blockLengthSlider.addEventListener('input', () => {
-            blockLengthValue.textContent = blockLengthSlider.value;
-        });
-        
-        temperatureSlider.addEventListener('input', () => {
-            temperatureValue.textContent = temperatureSlider.value;
-        });
-        
-        cfgScaleSlider.addEventListener('input', () => {
-            cfgScaleValue.textContent = cfgScaleSlider.value;
-        });
-
-        // Mock diffusion process - simulates the diffusion model with remasking
+        // Generate diffusion states
         function simulateDiffusion() {
-            const prompt = promptInput.value;
-            const genLength = parseInt(genLengthSlider.value);
-            const steps = parseInt(stepsSlider.value);
-            const blockLength = parseInt(blockLengthSlider.value);
+            generateBtn.disabled = true;
+            generateBtn.textContent = "Generating...";
             
-            // In a real implementation, we'd call the generate function here
-            
-            // Create mock tokens for demonstration
-            const promptTokens = prompt.split(/\s+/).slice(0, 20); // Simulated tokenization
-            const totalLength = promptTokens.length + genLength;
-            
-            // Initial state: prompt tokens + mask tokens
-            let initialState = new Array(totalLength).fill(maskId);
-            promptTokens.forEach((_, i) => {
-                initialState[i] = i; // Use index as token ID for prompt tokens
-            });
-            
-            // Record initial state
-            simulationSteps = [initialState.slice()];
-            
-            // Simulate the diffusion process
-            const numBlocks = Math.ceil(genLength / blockLength);
-            const stepsPerBlock = Math.ceil(steps / numBlocks);
-            
-            // For each block
-            for (let block = 0; block < numBlocks; block++) {
-                const blockStart = promptTokens.length + block * blockLength;
-                const blockEnd = Math.min(blockStart + blockLength, totalLength);
+            setTimeout(() => {
+                // Get example type
+                const exampleType = exampleSelector.value;
+                const exampleData = predefinedAnswers[exampleType];
+                const finalTokens = exampleData.tokens;
+                const finalLength = exampleData.length;
                 
-                // For each step in this block
-                for (let step = 0; step < stepsPerBlock; step++) {
-                    const prevState = simulationSteps[simulationSteps.length - 1].slice();
-                    
-                    // Generate some tokens in each step
-                    const tokensPerStep = Math.max(1, Math.floor((blockEnd - blockStart) / stepsPerBlock));
-                    
-                    // Randomly select tokens to update
-                    const maskPositions = [];
-                    for (let i = blockStart; i < blockEnd; i++) {
-                        if (prevState[i] === maskId) {
-                            maskPositions.push(i);
+                // Create a mapping of positions to tokens
+                const finalTokenMap = {};
+                for (let i = 0; i < finalTokens.length; i++) {
+                    finalTokenMap[i] = {
+                        text: finalTokens[i],
+                        id: i + 1000 // Use a unique ID for each token
+                    };
+                }
+                
+                // Set up initial state - all masks for positions that will be filled
+                let initialState = new Array(genLength);
+                // Initially fill with mask tokens
+                for (let i = 0; i < genLength; i++) {
+                    initialState[i] = maskId;
+                }
+                simulationSteps = [initialState.slice()];
+                
+                // Initial complete generation - predict all tokens at once
+                let firstStep = initialState.slice();
+                for (let i = 0; i < genLength; i++) {
+                    if (i < finalLength) {
+                        // For the first step, randomly assign tokens that are mostly wrong
+                        // We'll start with random tokens and gradually improve them
+                        const useCorrectToken = Math.random() < 0.2; // 20% chance of correct token
+                        
+                        if (useCorrectToken) {
+                            firstStep[i] = finalTokenMap[i].id;
+                        } else {
+                            // Use a random token from the vocabulary
+                            const randomIndex = Math.floor(Math.random() * finalLength);
+                            firstStep[i] = finalTokenMap[randomIndex].id;
                         }
+                    } else {
+                        // Empty tokens (still with a unique ID) for unused positions
+                        firstStep[i] = -i - 1; // Unique negative ID for empty tokens
                     }
+                }
+                simulationSteps.push(firstStep.slice());
+                
+                // Set up blocks for the refinement process
+                const numBlocks = Math.ceil(genLength / blockLength);
+                // Ensure we have exactly 128 steps total (including the initial generation step)
+                const totalRefinementSteps = steps - 1;
+                const stepsPerBlock = Math.floor(totalRefinementSteps / numBlocks);
+                const extraSteps = totalRefinementSteps - (stepsPerBlock * numBlocks);
+                
+                console.log(`Total steps: ${steps}, Blocks: ${numBlocks}, Steps per block: ${stepsPerBlock}, Extra steps: ${extraSteps}`);
+                
+                // Additional simulation steps to reach exactly 128 steps
+                let additionalSteps = [];
+                
+                // Process each block
+                for (let block = 0; block < numBlocks; block++) {
+                    const blockStart = block * blockLength;
+                    const blockEnd = Math.min(blockStart + blockLength, genLength);
                     
-                    // Shuffle and take first N positions
-                    maskPositions.sort(() => 0.5 - Math.random());
-                    const positionsToUpdate = maskPositions.slice(0, tokensPerStep);
-                    
-                    // Update the tokens - simulating the remasking strategy
-                    positionsToUpdate.forEach(pos => {
-                        // In a real implementation, we'd use the model's output here
-                        // For demo, just use a mock token from our list
-                        const mockTokenIdx = Math.floor(Math.random() * mockTokens.length);
-                        prevState[pos] = promptTokens.length + mockTokenIdx; // Using offset to distinguish from prompt tokens
-                    });
-                    
-                    // Simulate remasking: tokens can revert back to [MASK] based on confidence
-                    // This simulates the 'low_confidence' remasking strategy from your code
-                    if (step < stepsPerBlock - 1 && block < numBlocks - 1) {
-                        // Find tokens that might be remasked (excluding prompt tokens)
-                        const remaskCandidates = [];
-                        for (let i = promptTokens.length; i < totalLength; i++) {
-                            // Only consider tokens that have been generated (not still masked)
-                            if (prevState[i] !== maskId && i >= blockStart) {
-                                remaskCandidates.push(i);
+                    // For each step in this block
+                    for (let step = 0; step < stepsPerBlock; step++) {
+                        // Get previous state
+                        const prevState = simulationSteps[simulationSteps.length - 1].slice();
+                        
+                        // Create confidence scores (simulated) - higher for tokens that should remain
+                        const confidenceScores = {};
+                        for (let i = blockStart; i < blockEnd; i++) {
+                            if (i < finalLength) {
+                                // For real content positions
+                                // The closer to final step, the higher confidence for correct tokens
+                                const progressFactor = step / stepsPerBlock; // 0 to 1
+                                
+                                // Calculate a stability factor that increases over steps
+                                const stabilityBonus = Math.min(0.7, progressFactor * 0.8);
+                                
+                                if (prevState[i] === finalTokenMap[i].id) {
+                                    // Correct tokens get higher confidence
+                                    confidenceScores[i] = 0.5 + Math.random() * 0.3 + stabilityBonus;
+                                } else {
+                                    // Incorrect tokens get lower confidence
+                                    confidenceScores[i] = Math.random() * 0.3;
+                                }
+                            } else {
+                                // For empty positions (beyond content), higher confidence
+                                confidenceScores[i] = 0.6 + Math.random() * 0.4;
                             }
                         }
                         
-                        // Randomly select some tokens to remask based on "confidence"
-                        if (remaskCandidates.length > 0) {
-                            const numToRemask = Math.floor(remaskCandidates.length * 0.2); // 20% chance to remask
-                            remaskCandidates.sort(() => 0.5 - Math.random());
-                            const tokensToRemask = remaskCandidates.slice(0, numToRemask);
-                            
-                            // Remask selected tokens
-                            tokensToRemask.forEach(pos => {
-                                prevState[pos] = maskId;
-                            });
+                        // Determine how many tokens to remask based on confidence
+                        // Keep remasking tokens all the way to the end, with slightly decreasing rate
+                        const progressRatio = step / stepsPerBlock;
+                        const remaskRatio = Math.max(0.05, 0.3 - (progressRatio * 0.15));
+                        
+                        // Make sure we're remasking tokens all the way to the end
+                        // Only in the very last step do we stop remasking
+                        // Calculate how many tokens to remask
+                        const tokensInBlock = blockEnd - blockStart;
+                        const remaskCount = Math.max(1, Math.floor(tokensInBlock * remaskRatio));
+                        
+                        // Sort positions by confidence (lowest first)
+                        const positionsByConfidence = Object.keys(confidenceScores)
+                            .map(pos => parseInt(pos))
+                            .sort((a, b) => confidenceScores[a] - confidenceScores[b]);
+                        
+                        // Remask tokens with lowest confidence
+                        const tokensToRemask = positionsByConfidence.slice(0, remaskCount);
+                        
+                        for (const pos of tokensToRemask) {
+                            prevState[pos] = maskId;
                         }
+                        
+                        // Now unmask the remasked tokens with new predictions
+                        for (const pos of tokensToRemask) {
+                            if (pos < finalLength) {
+                                // For content positions
+                                // As we progress through steps, increase chance of correct token
+                                const correctTokenChance = 0.3 + (progressRatio * 0.7);
+                                
+                                if (Math.random() < correctTokenChance) {
+                                    // Generate the correct token
+                                    prevState[pos] = finalTokenMap[pos].id;
+                                } else {
+                                    // Generate a random incorrect token
+                                    // Use another position's token ID to simulate a wrong prediction
+                                    const randomPos = Math.floor(Math.random() * finalLength);
+                                    prevState[pos] = finalTokenMap[randomPos].id;
+                                }
+                            } else {
+                                // For empty positions
+                                prevState[pos] = -pos - 1; // Empty token ID
+                            }
+                        }
+                        
+                        // Ensure the last few steps converge to the correct answer
+                        // Only do this in the very last step
+                        if (step === stepsPerBlock - 1 && block === numBlocks - 1) {
+                            for (let i = 0; i < genLength; i++) {
+                                if (i < finalLength) {
+                                    prevState[i] = finalTokenMap[i].id;
+                                } else {
+                                    prevState[i] = -i - 1; // Empty token
+                                }
+                            }
+                        }
+                        
+                        // Add this state to steps
+                        simulationSteps.push(prevState.slice());
+                    }
+                }
+                
+                // After all block processing, add any additional steps needed to reach exactly 128 total steps
+                const currentStepCount = simulationSteps.length;
+                const stepsNeeded = steps - currentStepCount;
+                
+                if (stepsNeeded > 0) {
+                    console.log(`Adding ${stepsNeeded} additional steps to reach ${steps} total steps`);
+                    
+                    // Get the last state before final convergence
+                    const lastState = simulationSteps[simulationSteps.length - 1].slice();
+                    
+                    // Create a pool of positions to continue remasking
+                    let allPositions = [];
+                    for (let i = 0; i < finalLength; i++) {
+                        allPositions.push(i);
                     }
                     
-                    // Add this state to our steps
-                    simulationSteps.push(prevState.slice());
+                    // Generate additional steps with small modifications
+                    for (let i = 0; i < stepsNeeded - 1; i++) {
+                        // Make a copy of the previous state
+                        const newState = simulationSteps[simulationSteps.length - 1].slice();
+                        
+                        // Remask a small number of random tokens
+                        allPositions.sort(() => Math.random() - 0.5);
+                        const positionsToChange = allPositions.slice(0, Math.max(1, Math.floor(finalLength * 0.05)));
+                        
+                        for (const pos of positionsToChange) {
+                            // For some positions, insert an incorrect token
+                            const useCorrectToken = Math.random() < 0.6; // 60% chance of correct token
+                            
+                            if (useCorrectToken) {
+                                newState[pos] = finalTokenMap[pos].id;
+                            } else {
+                                // Use another position's token
+                                const randomPos = Math.floor(Math.random() * finalLength);
+                                newState[pos] = finalTokenMap[randomPos].id;
+                            }
+                        }
+                        
+                        simulationSteps.push(newState);
+                    }
+                    
+                    // Add the final perfect state as the last step
+                    const finalState = lastState.slice();
+                    for (let i = 0; i < genLength; i++) {
+                        if (i < finalLength) {
+                            finalState[i] = finalTokenMap[i].id;
+                        } else {
+                            finalState[i] = -i - 1; // Empty token
+                        }
+                    }
+                    simulationSteps.push(finalState);
                 }
-            }
-            
-            // Update UI
-            totalStepsDisplay.textContent = simulationSteps.length - 1;
-            stepSlider.max = simulationSteps.length - 1;
-            stepSlider.disabled = false;
-            
-            renderStep(0);
-            playPauseBtn.textContent = "Play";
-            isPlaying = false;
-            
-            // Generate mock output
-            outputText.textContent = "To solve this problem, I need to calculate how far Lily runs in 8 hours.\n\n" +
-                "First 4 hours: Lily runs at 12 km/h\n" +
-                "12 km/h × 4 hours = 48 km\n\n" +
-                "Next 4 hours: Lily runs at 6 km/h\n" +
-                "6 km/h × 4 hours = 24 km\n\n" +
-                "Total distance: 48 km + 24 km = 72 km\n\n" +
-                "Therefore, Lily can run 72 kilometers in 8 hours.";
+                
+                // Set the output text
+                outputText.textContent = exampleData.text;
+                
+                // Update UI
+                totalStepsDisplay.textContent = simulationSteps.length - 1;
+                stepSlider.max = simulationSteps.length - 1;
+                stepSlider.disabled = false;
+                
+                renderStep(0);
+                playPauseBtn.textContent = "Play";
+                isPlaying = false;
+                
+                generateBtn.disabled = false;
+                generateBtn.textContent = "Generate";
+            }, 1000);
         }
 
         // Render a specific step of the simulation
@@ -435,43 +538,108 @@
             tokenGrid.innerHTML = '';
             const state = simulationSteps[step];
             
-            const prompt = promptInput.value;
-            const promptTokens = prompt.split(/\s+/).slice(0, 20); // Simulated tokenization
+            // Get example type and tokens
+            const exampleType = exampleSelector.value;
+            const exampleTokens = predefinedAnswers[exampleType].tokens;
+            const finalLength = predefinedAnswers[exampleType].length;
+            
+            // Look ahead to see which tokens will change in the next step
+            const willChange = new Set();
+            if (step < simulationSteps.length - 1) {
+                const nextState = simulationSteps[step + 1];
+                for (let i = 0; i < genLength; i++) {
+                    if (state[i] !== nextState[i]) {
+                        willChange.add(i);
+                    }
+                }
+            }
             
             state.forEach((tokenId, index) => {
                 const tokenElement = document.createElement('div');
                 tokenElement.classList.add('token');
                 
-                let tokenClass = '';
-                let tokenText = '';
-                let tooltipText = '';
+                // Check if this token will change in the next step
+                const willBeChanged = willChange.has(index);
                 
-                if (index < promptTokens.length) {
-                    // Prompt tokens
-                    tokenClass = 'prompt';
-                    tokenText = promptTokens[index].slice(0, 2); // First 2 chars
-                    tooltipText = promptTokens[index];
-                } else if (tokenId === maskId) {
-                    // Mask tokens
-                    tokenClass = 'mask';
-                    tokenText = '?';
-                    tooltipText = '[MASK]';
+                if (tokenId === maskId) {
+                    // Mask token
+                    tokenElement.classList.add('mask');
+                    tokenElement.textContent = '?';
+                    
+                    const tooltipElement = document.createElement('span');
+                    tooltipElement.classList.add('token-info');
+                    tooltipElement.textContent = 'Being remasked';
+                    tokenElement.appendChild(tooltipElement);
+                } else if (tokenId < 0) {
+                    // Empty token (beyond content)
+                    tokenElement.classList.add('generated');
+                    tokenElement.classList.add('empty');
+                    tokenElement.textContent = '';
+                    
+                    const tooltipElement = document.createElement('span');
+                    tooltipElement.classList.add('token-info');
+                    tooltipElement.textContent = '[EMPTY]';
+                    tokenElement.appendChild(tooltipElement);
                 } else {
-                    // Generated tokens
-                    tokenClass = 'generated';
-                    const mockIndex = Math.max(0, tokenId - promptTokens.length);
-                    const mockToken = mockTokens[mockIndex % mockTokens.length];
-                    tokenText = mockToken ? mockToken.slice(0, 2) : '?';
-                    tooltipText = mockToken || '?';
+                    // Generated token
+                    tokenElement.classList.add('generated');
+                    
+                    // If this token will change in the next step, mark it yellow
+                    if (willBeChanged) {
+                        tokenElement.classList.add('lowconfidence');
+                    }
+                    
+                    // Display the token
+                    let displayText = '';
+                    let tooltipText = '';
+                    
+                    // Check if this is a predicted token for an actual content position
+                    if (index < finalLength) {
+                        const correctTokenId = index + 1000; // ID of the correct token
+                        
+                        if (tokenId === correctTokenId) {
+                            // Correct token
+                            displayText = exampleTokens[index];
+                            tooltipText = displayText;
+                            
+                            // Add information if this token will change
+                            if (willBeChanged) {
+                                tooltipText += ' (will change)';
+                            }
+                        } else {
+                            // Incorrect token - find which token it corresponds to
+                            const tokenIndex = tokenId - 1000;
+                            if (tokenIndex >= 0 && tokenIndex < exampleTokens.length) {
+                                displayText = exampleTokens[tokenIndex];
+                                tooltipText = displayText + ' (incorrect)';
+                                
+                                // Add information if this token will change
+                                if (willBeChanged) {
+                                    tooltipText += ', will change';
+                                }
+                            } else {
+                                displayText = '?';
+                                tooltipText = 'Unknown token';
+                            }
+                        }
+                    } else {
+                        // Empty position with generated token
+                        displayText = '';
+                        tooltipText = '[EMPTY]';
+                    }
+                    
+                    // Show first 2 characters or the whole token if short
+                    if (displayText.length <= 2) {
+                        tokenElement.textContent = displayText;
+                    } else {
+                        tokenElement.textContent = displayText.slice(0, 2);
+                    }
+                    
+                    const tooltipElement = document.createElement('span');
+                    tooltipElement.classList.add('token-info');
+                    tooltipElement.textContent = tooltipText;
+                    tokenElement.appendChild(tooltipElement);
                 }
-                
-                tokenElement.classList.add(tokenClass);
-                tokenElement.textContent = tokenText;
-                
-                const tooltipElement = document.createElement('span');
-                tooltipElement.classList.add('token-info');
-                tooltipElement.textContent = tooltipText;
-                tokenElement.appendChild(tooltipElement);
                 
                 tokenGrid.appendChild(tokenElement);
             });
@@ -510,23 +678,16 @@
             
             if (isPlaying) {
                 animationFrameId = requestAnimationFrame(() => {
-                    setTimeout(playAnimation, 200); // Control animation speed
+                    setTimeout(playAnimation, 100); // Control animation speed
                 });
             }
         }
 
+        // Update example
+        exampleSelector.addEventListener('change', simulateDiffusion);
+
         // Start generation
-        generateBtn.addEventListener('click', () => {
-            generateBtn.disabled = true;
-            generateBtn.textContent = "Generating...";
-            
-            // Simulate backend processing time
-            setTimeout(() => {
-                simulateDiffusion();
-                generateBtn.disabled = false;
-                generateBtn.textContent = "Generate";
-            }, 1000);
-        });
+        generateBtn.addEventListener('click', simulateDiffusion);
 
         // Initialize with example
         simulateDiffusion();
