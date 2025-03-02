@@ -44,8 +44,8 @@ def clean_output(decoded):
     """
     # Insert spaces around each mask token.
     processed = decoded.replace(MASK_TOKEN, f" {MASK_TOKEN} ")
-    processed = decoded.replace('<|endoftext|>', '')
-    processed = decoded.replace('<|eot_id|>', '')
+    processed = processed.replace('<|endoftext|>', '')
+    processed = processed.replace('<|eot_id|>', '')
     # Split into tokens.
     tokens = processed.split()
     # Pad with empty strings if needed.
