@@ -122,7 +122,7 @@ def generate(model, tokenizer, prompt, steps=128, gen_length=128, block_length=1
             decoded = tokenizer.batch_decode(x[:, prompt.shape[1]:], skip_special_tokens=False)[0]
             # Clean up the decoded text using our cleaning function.
             cleaned_output = clean_output(decoded)
-            output_str = f"Block {num_block+1}, Step {i+1}/{steps}:\n{cleaned_output}\n"
+            output_str = f"{cleaned_output}\n"
             # Write the intermediate output to the file (overwriting previous content).
             with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
                 f.write(output_str)

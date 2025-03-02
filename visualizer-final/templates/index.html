@@ -164,6 +164,7 @@
     function simulateDiffusion() {
       const prompt = promptInput.value;
       const formData = new FormData();
+      let intervalptr = null;
       formData.append("prompt", prompt);
       stepSlider.disabled = true;
       playPauseBtn.disabled = true;
@@ -175,7 +176,7 @@
       .then(response => response.json())
       .then(data => {
         if(data.status === "success"){
-          setInterval(pollDiffusionOutput, 200);
+          intervalptr = setInterval(pollDiffusionOutput, 200);
           updateFinalOutput();
           generateBtn.disabled = false;
         }
