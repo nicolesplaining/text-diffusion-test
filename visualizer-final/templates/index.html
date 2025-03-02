@@ -175,7 +175,7 @@
       .then(response => response.json())
       .then(data => {
         if(data.status === "success"){
-          setInterval(pollDiffusionOutput, 1000);
+          setInterval(pollDiffusionOutput, 200);
           updateFinalOutput();
           generateBtn.disabled = false;
         }
