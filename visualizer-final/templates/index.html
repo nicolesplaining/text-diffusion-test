@@ -13,7 +13,6 @@
       color: #333;
     }
     h1 { text-align: center; margin-bottom: 20px; }
-    /* Prompt input and button */
     #prompt-container {
       text-align: center;
       margin-bottom: 20px;
@@ -36,7 +35,6 @@
       gap: 4px;
       font-family: monospace;
     }
-    /* Token boxes: they now expand to fit words */
     .token {
       display: inline-block;
       padding: 8px 12px;
@@ -105,7 +103,8 @@
   </div>
   
   <div id="visualization">
-    <div class="token-grid" id="token-grid"></div>
+    <div class="token-grid" id="token-grid">
+    </div>
     <div class="controls-bar">
       <button id="play-pause">Play</button>
       <input type="range" id="step-slider" min="0" max="0" value="0" step="1" disabled>
@@ -119,7 +118,6 @@
   </div>
   
   <script>
-    // DOM elements
     const promptInput = document.getElementById('prompt-input');
     const generateBtn = document.getElementById('generate-btn');
     const tokenGrid = document.getElementById("token-grid");
@@ -129,169 +127,69 @@
     const totalStepsDisplay = document.getElementById("total-steps");
     const outputText = document.getElementById("output-text");
     
-    // Simulation state
-    let simulationSteps = [];
-    let currentStep = 0;
-    let isPlaying = false;
-    let animationFrameId = null;
-    
-    // Constants for token markers and expected token count
-    const MASK_TOKEN = "<|mdm_mask|>";
-    const NUM_TOKENS = 128;  // Each state should have 128 tokens
-    
-    // Load the diffusion output file from the static folder.
-    function loadDiffusionOutput() {
-      return fetch("/static/diffusion_output.txt")
-        .then(response => response.text())
-        .then(text => parseDiffusionOutput(text))
-        .catch(err => {
-          console.error("Error loading diffusion output file:", err);
-          return [];
-        });
+    function pollDiffusionOutput() {
+      fetch('/get_diffusion')
+        .then(response => response.json())
+        .then(data => {
+          tokenGrid.innerHTML = "";
+          const line = data.output;
+          const tokens = line.split(/\s+/);
+          tokens.forEach(token => {
+            const tokenDiv = document.createElement("div");
+            tokenDiv.classList.add("token");
+            if(token === "<|mdm_mask|>"){
+              tokenDiv.classList.add("mask");
+              tokenDiv.textContent = "?";
+            } else if(token === ""){
+              tokenDiv.classList.add("empty");
+            } else {
+              tokenDiv.classList.add("generated");
+              tokenDiv.textContent = token;
+            }
+            tokenGrid.appendChild(tokenDiv);
+          });
+        })
+        .catch(err => console.error("Error polling diffusion output:", err));
     }
     
-    // Parse the diffusion output file.
-    // This regex matches headers like "Block X, Step Y/Z:" and captures all text until the next header.
-    // We insert spaces around each MASK_TOKEN so consecutive masks are split individually.
-    // If fewer than 128 tokens are found, we pad with empty strings.
-    function parseDiffusionOutput(fileText) {
-      const steps = [];
-      const regex = /Block\s+\d+,\s*Step\s+\d+\/\d+:\s*([\s\S]*?)(?=Block\s+\d+,\s*Step|\s*$)/g;
-      let match;
-      while ((match = regex.exec(fileText)) !== null) {
-        let stepText = match[1].trim();
-        // Insert spaces around each mask token
-        stepText = stepText.replace(/(<\|mdm_mask\|>)/g, ' $1 ');
-        let tokens = stepText.split(/\s+/).filter(token => token !== "");
-        while(tokens.length < NUM_TOKENS) tokens.push("");
-        if(tokens.length > NUM_TOKENS) tokens = tokens.slice(0, NUM_TOKENS);
-        steps.push(tokens);
-      }
-      console.log("Parsed simulation steps:", steps.length);
-      return steps;
+    function updateFinalOutput() {
+      fetch('/get_diffusion')
+        .then(response => response.json())
+        .then(data => {
+          outputText.textContent = data.output;
+        })
+        .catch(err => console.error("Error updating final output:", err));
     }
     
-    // Render a given simulation step.
-    function renderStep(stepIndex) {
-      currentStep = stepIndex;
-      currentStepDisplay.textContent = stepIndex;
-      stepSlider.value = stepIndex;
-      tokenGrid.innerHTML = "";
-      if (!simulationSteps[stepIndex]) return;
-      
-      const tokens = simulationSteps[stepIndex];
-      // Determine tokens that will change in the next step for highlighting.
-      const willChange = new Set();
-      if (stepIndex < simulationSteps.length - 1) {
-        const nextTokens = simulationSteps[stepIndex + 1];
-        for (let i = 0; i < tokens.length; i++) {
-          if (tokens[i] !== nextTokens[i]) {
-            willChange.add(i);
-          }
-        }
-      }
-      
-      tokens.forEach((token, index) => {
-        const tokenElement = document.createElement("div");
-        tokenElement.classList.add("token");
-        const tokenWillChange = willChange.has(index);
-        if (token === MASK_TOKEN) {
-          tokenElement.classList.add("mask");
-          tokenElement.textContent = "?";
-          const tooltip = document.createElement("span");
-          tooltip.classList.add("token-info");
-          tooltip.textContent = "Masked";
-          tokenElement.appendChild(tooltip);
-        } else if (token === "") {
-          tokenElement.classList.add("empty");
-          tokenElement.textContent = "";
-          const tooltip = document.createElement("span");
-          tooltip.classList.add("token-info");
-          tooltip.textContent = "[EMPTY]";
-          tokenElement.appendChild(tooltip);
-        } else {
-          tokenElement.classList.add("generated");
-          if (tokenWillChange) tokenElement.classList.add("lowconfidence");
-          tokenElement.textContent = token;
-          const tooltip = document.createElement("span");
-          tooltip.classList.add("token-info");
-          tooltip.textContent = token;
-          tokenElement.appendChild(tooltip);
-        }
-        tokenGrid.appendChild(tokenElement);
-      });
-    }
-    
-    // Animation loop.
-    function playAnimation() {
-      const nextStep = currentStep + 1;
-      if (nextStep >= simulationSteps.length) {
-        isPlaying = false;
-        playPauseBtn.textContent = "Play";
-        return;
-      }
-      renderStep(nextStep);
-      if (isPlaying) {
-        animationFrameId = requestAnimationFrame(() => {
-          setTimeout(playAnimation, 100);
-        });
-      }
-    }
-    
-    playPauseBtn.addEventListener("click", () => {
-      isPlaying = !isPlaying;
-      playPauseBtn.textContent = isPlaying ? "Pause" : "Play";
-      if (isPlaying) playAnimation();
-      else cancelAnimationFrame(animationFrameId);
-    });
-    
-    stepSlider.addEventListener("input", () => {
-      isPlaying = false;
-      playPauseBtn.textContent = "Play";
-      cancelAnimationFrame(animationFrameId);
-      renderStep(parseInt(stepSlider.value));
-    });
-    
-    // When the user clicks Generate, send the prompt to the backend and then load the generated file.
     function simulateDiffusion() {
       const prompt = promptInput.value;
       const formData = new FormData();
       formData.append("prompt", prompt);
-      // Disable controls during generation.
       stepSlider.disabled = true;
       playPauseBtn.disabled = true;
       generateBtn.disabled = true;
-      fetch("/generate", {
+      fetch('/generate', {
         method: "POST",
         body: formData
       })
       .then(response => response.json())
       .then(data => {
         if(data.status === "success"){
-          loadDiffusionOutput().then(steps => {
-            simulationSteps = steps;
-            if(simulationSteps.length === 0){
-              console.error("No simulation steps parsed.");
-              return;
-            }
-            totalStepsDisplay.textContent = simulationSteps.length - 1;
-            stepSlider.max = simulationSteps.length - 1;
-            stepSlider.disabled = false;
-            playPauseBtn.disabled = false;
-            generateBtn.disabled = false;
-            // For final output, join tokens from the final state.
-            outputText.textContent = simulationSteps[simulationSteps.length - 1].join(" ");
-            renderStep(0);
-            playPauseBtn.textContent = "Play";
-          });
+          setInterval(pollDiffusionOutput, 1000);
+          updateFinalOutput();
+          generateBtn.disabled = false;
         }
       })
       .catch(err => {
         console.error("Error generating output:", err);
+        generateBtn.disabled = false;
       });
     }
     
     generateBtn.addEventListener("click", simulateDiffusion);
+    
+    playPauseBtn.addEventListener("click", () => {
+    });
   </script>
 </body>
 </html>
