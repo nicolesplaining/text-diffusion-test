@@ -6,15 +6,26 @@ from transformers import AutoTokenizer, AutoModel
 import os
 import sys
 
+# Path to the output file in the static folder.
 OUTPUT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "diffusion_output.txt")
+NUM_TOKENS = 128
+MASK_TOKEN = "<|mdm_mask|>"
 
 def add_gumbel_noise(logits, temperature):
+    """
+    The Gumbel max is a method for sampling categorical distributions.
+    According to arXiv:2409.02908, for MDM, low-precision Gumbel Max improves perplexity score but reduces generation quality.
+    Thus, we use float64.
+    """
     logits = logits.to(torch.float64)
     noise = torch.rand_like(logits, dtype=torch.float64)
     gumbel_noise = (- torch.log(noise)) ** temperature
     return logits.exp() / gumbel_noise
 
 def get_num_transfer_tokens(mask_index, steps):
+    """
+    Precompute the number of tokens that need to be transitioned at each step.
+    """
     mask_num = mask_index.sum(dim=1, keepdim=True)
     base = mask_num // steps
     remainder = mask_num % steps
@@ -23,9 +34,45 @@ def get_num_transfer_tokens(mask_index, steps):
         num_transfer_tokens[i, :remainder[i]] += 1
     return num_transfer_tokens
 
+def clean_output(decoded):
+    """
+    Clean the decoded output by:
+      - Inserting spaces around each <|mdm_mask|> token so that consecutive masks are separated.
+      - Splitting into tokens by whitespace.
+      - Padding with empty strings (or truncating) so that the token list is exactly NUM_TOKENS tokens long.
+      - Rejoining the tokens with a single space.
+    """
+    # Insert spaces around each mask token.
+    processed = decoded.replace(MASK_TOKEN, f" {MASK_TOKEN} ")
+    # Split into tokens.
+    tokens = processed.split()
+    # Pad with empty strings if needed.
+    while len(tokens) < NUM_TOKENS:
+        tokens.append("")
+    # Truncate if there are too many tokens.
+    if len(tokens) > NUM_TOKENS:
+        tokens = tokens[:NUM_TOKENS]
+    # Rejoin tokens.
+    cleaned = " ".join(tokens)
+    return cleaned
+
 @torch.no_grad()
 def generate(model, tokenizer, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
              cfg_scale=0., remasking='low_confidence', mask_id=126336):
+    """
+    Args:
+        model: The diffusion model.
+        tokenizer: The tokenizer used for decoding.
+        prompt: A tensor (shape: [1, l]) representing the encoded prompt.
+        steps: Total sampling steps (must be ≤ gen_length).
+        gen_length: Number of tokens to generate.
+        block_length: Block length (if < gen_length, semi-autoregressive remasking is used).
+        temperature: Sampling temperature.
+        cfg_scale: Classifier-free guidance scale.
+        remasking: Either 'low_confidence' or 'random'.
+        mask_id: The token id of [MASK] (126336).
+    """
+    # Create a working buffer: prompt tokens followed by gen_length masked tokens.
     x = torch.full((1, prompt.shape[1] + gen_length), mask_id, dtype=torch.long).to(model.device)
     x[:, :prompt.shape[1]] = prompt.clone()
     prompt_index = (x != mask_id)
@@ -34,6 +81,7 @@ def generate(model, tokenizer, prompt, steps=128, gen_length=128, block_length=1
     assert steps % num_blocks == 0
     steps = steps // num_blocks  # steps per block
 
+    # Loop over each block and each step.
     for num_block in range(num_blocks):
         block_mask_index = (x[:, prompt.shape[1] + num_block * block_length: prompt.shape[1] + (num_block + 1) * block_length] == mask_id)
         num_transfer_tokens = get_num_transfer_tokens(block_mask_index, steps)
@@ -53,7 +101,7 @@ def generate(model, tokenizer, prompt, steps=128, gen_length=128, block_length=1
             x0 = torch.argmax(logits_with_noise, dim=-1)  # shape: [batch_size, seq_len]
 
             if remasking == 'low_confidence':
-                p = torch.nn.functional.softmax(logits.to(torch.float64), dim=-1)
+                p = F.softmax(logits.to(torch.float64), dim=-1)
                 x0_p = torch.squeeze(torch.gather(p, dim=-1, index=torch.unsqueeze(x0, -1)), -1)
             elif remasking == 'random':
                 x0_p = torch.rand((x0.shape[0], x0.shape[1]), device=x0.device)
@@ -70,8 +118,12 @@ def generate(model, tokenizer, prompt, steps=128, gen_length=128, block_length=1
                 transfer_index[j, select_index] = True
             x[transfer_index] = x0[transfer_index]
 
+            # Decode the generated portion (after the prompt), without skipping special tokens.
             decoded = tokenizer.batch_decode(x[:, prompt.shape[1]:], skip_special_tokens=False)[0]
-            output_str = f"Block {num_block+1}, Step {i+1}/{steps}:\n{decoded}\n"
+            # Clean up the decoded text using our cleaning function.
+            cleaned_output = clean_output(decoded)
+            output_str = f"Block {num_block+1}, Step {i+1}/{steps}:\n{cleaned_output}\n"
+            # Write the intermediate output to the file (overwriting previous content).
             with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
                 f.write(output_str)
             sys.stdout.flush()
@@ -84,12 +136,16 @@ def main():
     prompt_text = args.prompt
 
     print("Is GPU available?", torch.cuda.is_available())
-    device = "cuda"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    model = AutoModel.from_pretrained('GSAI-ML/LLaDA-8B-Instruct', trust_remote_code=True,
-                                        torch_dtype=torch.bfloat16).to(device).eval()
+    model = AutoModel.from_pretrained(
+        'GSAI-ML/LLaDA-8B-Instruct',
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16
+    ).to(device).eval()
     tokenizer = AutoTokenizer.from_pretrained('GSAI-ML/LLaDA-8B-Instruct', trust_remote_code=True)
-
+    
+    # Format the prompt using the chat template.
     m = [{"role": "user", "content": prompt_text}]
     prompt_formatted = tokenizer.apply_chat_template(m, add_generation_prompt=True, tokenize=False)
     input_ids = tokenizer(prompt_formatted)['input_ids']
