@@ -11,9 +11,12 @@ def index():
 @app.route('/generate', methods=['POST'])
 def generate_output():
     prompt = request.form.get('prompt', '')
+    # Clear the diffusion output file before starting generation.
+    output_file_path = os.path.join(app.root_path, "static", "diffusion_output.txt")
+    with open(output_file_path, "w", encoding="utf-8") as f:
+        f.write("")
     # Launch generate.py as a background process so it writes intermediate steps to file.
     run_generate(prompt)
-    # Return immediately. The generate.py process will update the file over time.
     return jsonify({'status': 'success'})
 
 @app.route('/get_diffusion', methods=['GET'])
@@ -27,7 +30,9 @@ def get_diffusion():
     return jsonify({'output': content})
 
 def run_generate(prompt):
+    # Launch generate.py in unbuffered mode so it writes intermediate steps to file in real time.
     cmd = ["python", "-u", "generate.py", "--prompt", prompt]
+    # Use Popen so that the process runs asynchronously.
     subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 if __name__ == '__main__':
